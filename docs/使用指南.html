@@ -1,0 +1,114 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Landslide Studio 使用指南</title>
+<style>
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f2f5f9;color:#26394c;font:16px/1.9 "Segoe UI","Microsoft YaHei",sans-serif}main{max-width:1120px;margin:36px auto;padding:45px 55px;background:white;border:1px solid #dce4eb;border-radius:12px}h1{font-size:30px;color:#153c60}h2{font-size:24px;border-top:1px solid #dce4eb;padding-top:28px;margin-top:42px}h3{font-size:19px;margin-top:28px}a{color:#2363b9;overflow-wrap:anywhere}pre{background:#132a3c;color:#e2edf7;border-radius:6px;padding:20px;overflow:auto;font:14px/1.8 Consolas,monospace}code{font-family:Consolas,monospace;overflow-wrap:anywhere}p code,li code,td code{background:#edf2f8;color:#3a628a;padding:2px 5px;border-radius:3px}table{border-collapse:collapse;width:100%;display:block;overflow:auto;margin:20px 0;font-size:14px}td,th{border:1px solid #dce4eb;padding:10px 14px;text-align:left;vertical-align:top}th{background:#eef4fb}blockquote{border-left:4px solid #638ecc;background:#f0f5fc;padding:10px 18px;margin:20px 0;color:#526d86}li{margin:7px 0}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;border-bottom:1px solid #dce4eb;padding-bottom:20px;font-size:13px;color:#6b839b}.top a{border:1px solid #cbd9e7;border-radius:5px;padding:6px 12px;text-decoration:none}.toc{background:#f6f9fc;padding:18px 25px;border:1px solid #dce4eb;border-radius:6px}.toc ul{padding-left:22px}.toc li{font-size:14px;margin:3px 0}@media(max-width:700px){main{margin:0;padding:22px 18px;border:0;border-radius:0}h1{font-size:25px}body{font-size:15px}}@media print{body{background:white}main{border:0;margin:0;padding:0;max-width:none}.top,.toc{display:none}pre{white-space:pre-wrap;background:#f1f3f5;color:#24374a}h2,h3{break-after:avoid}tr{break-inside:avoid}a{color:inherit}}
+</style></head><body><main><div class="top"><span>LANDSLIDE STUDIO / 本地工作台操作手册</span><a href="http://127.0.0.1:8765">打开平台 ↗</a></div><h1 id="landslidestudio">LandslideStudio 使用指南</h1>
+<p>滑坡影像分析平台：集成遥感影像合成、多模态语义分割、光流视频分析，以及基于上海交通大学致远一号AI模型API的辅助分析与报告生成。采用 FastAPI 后端与 HTML/CSS/JavaScript 前端，在本机浏览器中运行。</p>
+<p>本仓库提供部署所需源码、示例配置及安装启动脚本，不包含基础模型、LoRA、分割权重、API Key、数据集及个人运行结果。</p>
+<h2 id="_1">功能</h2>
+<ul>
+<li><strong>遥感影像合成</strong>：支持 Stable Diffusion 1.5、Stable Diffusion 2.1、SDXL；按模型与类别加载 LoRA，自动补充滑坡/非滑坡激活词。</li>
+<li><strong>滑坡语义分割</strong>：调用 M2FDeepLabV3Plus 推理网络，支持 RGB+DEM 和 RGB-only 输入，输出掩膜、叠加图及统计结果。</li>
+<li><strong>滑坡视频分析</strong>：稀疏/稠密光流、轨迹可视化、视频与记录数据导出、任意帧速度分布图及叠加图。</li>
+<li><strong>辅助分析与报告生成</strong>：通过配置的视觉/文本模型API生成报告；未调用大模型时明确标识为本地证据摘要。</li>
+<li><strong>任务与结果</strong>：可选任务命名、历史任务重命名、结果查看与下载。</li>
+</ul>
+<h2 id="windows">快速开始（Windows）</h2>
+<ol>
+<li>安装 Python 3.10（包含 Windows Python Launcher），下载或克隆本仓库并解压到本地目录。</li>
+<li>双击 <code>01_安装基础环境.cmd</code>，安装界面、API和光流依赖。</li>
+<li>需要影像生成或语义分割时，双击 <code>02_安装AI环境.cmd</code>。当前脚本安装 PyTorch 2.7.1 / torchvision 0.22.1 的 CUDA 12.6 版本，需要兼容的 NVIDIA 显卡驱动。无可用 NVIDIA GPU 时可选择 <code>02b_安装CPU推理环境.cmd</code>，实际推理速度取决于硬件。</li>
+<li>按下节放置模型，并将 <code>.env.example</code> 复制为 <code>.env</code>、<code>config.example.json</code> 复制为 <code>config.local.json</code>，填写自己的配置。</li>
+<li>双击 <code>00_启动平台.cmd</code>，在浏览器打开 <code>http://127.0.0.1:8765</code>。可用 <code>04_环境自检.cmd</code> 检查环境及文件状态。</li>
+<li>结束使用时运行 <code>03_停止平台.cmd</code>。只关闭浏览器标签页不会停止后台服务。</li>
+</ol>
+<p>只查看界面或使用光流分析，无需先下载所有模型。不同功能按自己的依赖与模型配置启用。服务默认仅在本机使用，不包含面向公网的账户认证或多用户权限管理。</p>
+<h2 id="_2">模型与配置</h2>
+<pre><code class="language-text">models/
+  base/
+    sd15/       # 完整 Diffusers 格式基础模型
+    sd21/       # 当前下载脚本选用 SD 2.1 768 版本
+    sdxl/       # SDXL Base 1.0
+  lora/
+    sd15/
+    sd21/
+    sdxl/
+  segmentation/
+    rgb_dem.pth
+</code></pre>
+<p>可运行 <code>07_下载或续传基础模型.cmd</code> 下载三个基础模型，支持续传；文件来源和固定版本记录在 <code>scripts/model_sources.json</code>。也可在安装环境后单独下载：</p>
+<pre><code class="language-powershell">.venv\Scripts\python.exe scripts/download_base.py sdxl
+</code></pre>
+<p>模型使用需遵循各自上游许可及使用条件。下载脚本不提供、也不会训练个人 LoRA 和分割权重。</p>
+<p>在每个 <code>models/lora/&lt;基础模型&gt;/</code> 目录中分别放置与该基础模型匹配的：</p>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>文件名</th>
+<th>自动添加的激活词</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>滑坡</td>
+<td><code>Southwest_China_Landslide.safetensors</code></td>
+<td><code>Southwest_China_Landslide</code></td>
+</tr>
+<tr>
+<td>非滑坡</td>
+<td><code>Southwest_China_Terrain.safetensors</code></td>
+<td><code>Southwest_China_Terrain</code></td>
+</tr>
+</tbody>
+</table>
+<p>LoRA 不能在不同基础模型之间直接混用；SD 2.1 的版本与训练配置也应一致。基础模型目录需要包含 <code>model_index.json</code> 及对应组件，不能只放一个权重文件。</p>
+<p>将双模态分割权重放在 <code>models/segmentation/rgb_dem.pth</code>。默认网络为 <code>m2f_deeplabv3plus_xception16</code>、<code>output_stride=16</code>、类别数 2；以实际训练配置为准。平台会读取可获取的 checkpoint 元数据，未记录的参数仍需人工核对。DEM 输入是预先制作且与 RGB 配准的三通道高程、坡度、坡向伪彩色图，不应直接替换成任意灰度图。RGB-only 使用缺失 DEM 的配置策略，并不意味着双模态权重变成了独立训练的 RGB 模型。</p>
+<p>在 <code>.env</code> 中设置自己的 <code>SJTU_API_KEY</code>。在 <code>config.local.json</code> 的 <code>llm</code> 配置中填写服务地址、账户可用的模型ID，并按模型实际能力设置 <code>supports_vision</code>。示例模型ID不保证对所有账户有效；视觉分析需选用支持图像输入的模型。不要提交 <code>.env</code> 或个人配置文件。</p>
+<h2 id="_3">使用与结果</h2>
+<p>四个功能页面均提供“任务名称（可选）”；未填写时保留任务类型名称，填写后显示为“任务类型-任务名称”。历史任务可在“任务与结果”中重命名。</p>
+<p>运行结果保存在 <code>data/jobs/&lt;任务ID&gt;/</code>，缓存位于 <code>.cache/</code>，日志位于 <code>logs/</code>。视频分析及逐点记录可能占用较大磁盘空间。需要清理时，先停止服务，备份有用结果后再删除不需要的任务目录；删除任务目录会同时移除其结果。</p>
+<p>光流速度默认依据图像像素位移和帧率计算。只有提供适当的空间尺度标定时才能解释为物理速度；单一尺度不能消除透视造成的全部误差。模型输出用于研究和辅助判读，不等同于经现场核验的灾害结论。</p>
+<p>移动目录后应重新启动服务；更换电脑或虚拟环境失效时使用 <code>06_迁移后重建环境.cmd</code> 重建依赖，并检查个人配置中的绝对路径。不要把另一台电脑的 <code>.venv</code> 当作通用可移植环境。</p>
+<h2 id="_4">目录结构</h2>
+<table>
+<thead>
+<tr>
+<th>路径</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app/</code></td>
+<td>FastAPI 服务、任务管理和四个功能适配器</td>
+</tr>
+<tr>
+<td><code>dist/</code></td>
+<td>浏览器界面，无需额外前端构建步骤</td>
+</tr>
+<tr>
+<td><code>scripts/</code></td>
+<td>安装、启停、自检、下载和权重检查工具</td>
+</tr>
+<tr>
+<td><code>vendor/M2FDeepLabV3Plus/network/</code></td>
+<td>分割推理所需的原始网络定义</td>
+</tr>
+<tr>
+<td><code>docs/使用指南.html</code></td>
+<td>平台内可打开的简明使用指南</td>
+</tr>
+<tr>
+<td><code>config.example.json</code>、<code>.env.example</code></td>
+<td>无个人密钥的示例配置</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_5">算法来源</h2>
+<ul>
+<li><a href="https://github.com/GreenLantern-Kevin/M2FDeepLabV3Plus">M2FDeepLabV3Plus</a>：分割网络；本仓库仅附推理所需网络定义，版本见 <code>vendor/M2FDeepLabV3Plus/UPSTREAM.md</code>。</li>
+<li><a href="https://github.com/GreenLantern-Kevin/Optical-Flow-Seismic-Rock-Avalanche-Detection">Optical-Flow-Seismic-Rock-Avalanche-Detection</a>：光流研究代码；平台包含适合后台任务执行的改编实现。</li>
+<li>影像生成通过 Hugging Face Diffusers 加载 Stable Diffusion 系列模型与 LoRA。</li>
+</ul>
+<p>仓库发布不改变第三方代码或模型各自的许可条件。</p></main></body></html>

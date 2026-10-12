@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#122838"><title>Landslide Studio · 滑坡影像分析平台</title><link rel="stylesheet" href="/styles.css?v=20261009-task-name-ui"><script src="/app.js?v=20261009-task-name-ui" defer></script></head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="#segmentation" aria-label="Landslide Studio 首页"><span class="brand-mark">LS</span><span>Landslide<span class="brand-sub">STUDIO / 影像工作台</span></span></a>
+  <div class="nav-caption">分析工作空间</div>
+  <nav aria-label="主导航">
+    <button data-page="generation"><span class="nav-index">01</span>遥感影像合成<span class="nav-icon">↗</span></button>
+    <button data-page="segmentation" class="active"><span class="nav-index">02</span>滑坡语义分割<span class="nav-icon">↗</span></button>
+    <button data-page="video"><span class="nav-index">03</span>滑坡视频分析<span class="nav-icon">↗</span></button>
+    <button data-page="analysis"><span class="nav-index">04</span>辅助分析与报告生成<span class="nav-icon">↗</span></button>
+  </nav>
+  <div class="nav-divider"></div>
+  <nav aria-label="管理"><button data-page="history"><span class="nav-index">◷</span>任务与结果</button><button data-page="setup"><span class="nav-index">⚙</span>模型与配置</button></nav>
+  <div class="sidebar-footer"><span class="local-label">LOCAL WORKSPACE</span><strong>你的数据，你的工作台</strong><p>图像推理在本机执行<br>AI分析请求按所选方式发送</p><a href="/api/guide" target="_blank" rel="noopener">打开逐步使用指南 ↗</a><div class="version">LANDSLIDE STUDIO <span>v1.0</span></div></div>
+</aside>
+<main>
+ <header class="topbar"><span>工作台 <span class="slash">/</span> <span id="breadcrumb">滑坡语义分割</span></span><span id="connection" class="badge">连接本地服务…</span></header>
+ <section class="page-heading"><div><div class="eyebrow" id="eyebrow">02 / SEGMENTATION</div><h1 id="page-title">滑坡语义分割</h1><p id="page-description">上传 RGB 影像，可选配准后的 DEM，提取滑坡区域。</p></div><button class="quiet" id="refresh-status">↻ 刷新状态</button></section>
+ <div id="notice" role="status" class="notice hidden"></div>
+ <div id="workspace"></div>
+ <footer class="main-footer"><span>影像合成 · 空间识别 · 运动分析 · 辅助研判</span><span>结束使用请运行 03_停止平台.cmd；仅关闭网页不会停止服务</span></footer>
+</main>
+<div id="toast" role="alert" class="toast hidden"></div>
+</body></html>
