@@ -1,0 +1,32 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+config.local.json
+*.pem
+*.key
+# Environments and runtime data
+.venv/
+.venv.backup-*/
+.cache/
+.pytest_cache/
+__pycache__/
+*.pyc
+data/
+logs/
+PROGRESS.md
+# Model assets are intentionally not distributed
+models/**
+!models/**/
+!models/**/.gitkeep
+*.safetensors
+*.pth
+*.pt
+*.ckpt
+*.bin
+*.onnx
+# Editor/OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

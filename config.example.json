@@ -1,0 +1,50 @@
+{
+  "generation": {
+    "device": "auto",
+    "cpu_offload": true,
+    "local_files_only": true,
+    "models": {
+      "sd15": {
+        "label": "Stable Diffusion 1.5",
+        "path": "models/base/sd15",
+        "lora_dir": "models/lora/sd15"
+      },
+      "sd21": {
+        "label": "Stable Diffusion 2.1",
+        "path": "models/base/sd21",
+        "lora_dir": "models/lora/sd21"
+      },
+      "sdxl": {
+        "label": "Stable Diffusion XL",
+        "path": "models/base/sdxl",
+        "lora_dir": "models/lora/sdxl"
+      }
+    }
+  },
+  "segmentation": {
+    "repo_path": "vendor/M2FDeepLabV3Plus",
+    "rgb_weights": "",
+    "multimodal_weights": "models/segmentation/rgb_dem.pth",
+    "model_name": "m2f_deeplabv3plus_xception16",
+    "output_stride": 16,
+    "separable_conv": false,
+    "num_classes": 2,
+    "landslide_class": 1,
+    "input_size": 256,
+    "tile_overlap": 64,
+    "device": "auto",
+    "dem_input": "prepared_rgb",
+    "dem_normalization": "imagenet",
+    "missing_dem_mode": "zeros",
+    "max_image_pixels": 16000000,
+    "auto_match_checkpoint": true
+  },
+  "llm": {
+    "base_url": "https://models.sjtu.edu.cn/api/v1",
+    "model": "qwen",
+    "api_key_env": "SJTU_API_KEY",
+    "supports_vision": true,
+    "timeout": 120
+  },
+  "max_upload_mb": 1024
+}
