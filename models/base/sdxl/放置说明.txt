@@ -1,0 +1,5 @@
+将 sdxl 完整 Diffusers 模型目录的内容放在这里。
+本层应直接包含 model_index.json、unet/、vae/、scheduler/、text_encoder/、tokenizer/ 等。
+SDXL还需要第二套text_encoder/tokenizer等模型本身要求的组件。
+不能只放一个基础模型.safetensors文件，也不要多套一层目录。
+详见 docs/使用指南.html。

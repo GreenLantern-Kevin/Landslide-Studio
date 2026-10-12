@@ -1,0 +1,5 @@
+此目录只放与 sd21 匹配的 LoRA：
+Southwest_China_Landslide.safetensors
+Southwest_China_Terrain.safetensors
+
+激活词由平台自动填入。不同架构的 LoRA 不能通用。
