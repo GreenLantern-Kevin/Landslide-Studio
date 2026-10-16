@@ -22,9 +22,9 @@
     }
   },
   "segmentation": {
-    "repo_path": "vendor/M2FDeepLabV3Plus",
+    "repo_path": "vendor/M2F-DeepLab",
     "rgb_weights": "",
-    "multimodal_weights": "models/segmentation/rgb_dem.pth",
+    "multimodal_weights": "models/segmentation/m2f_deeplab.pth",
     "model_name": "m2f_deeplabv3plus_xception16",
     "output_stride": 16,
     "separable_conv": false,
@@ -37,7 +37,9 @@
     "dem_normalization": "imagenet",
     "missing_dem_mode": "zeros",
     "max_image_pixels": 16000000,
-    "auto_match_checkpoint": true
+    "auto_match_checkpoint": true,
+    "backend": "m2f_deeplab",
+    "strategy": "auto"
   },
   "llm": {
     "base_url": "https://models.sjtu.edu.cn/api/v1",

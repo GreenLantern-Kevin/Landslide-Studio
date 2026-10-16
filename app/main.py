@@ -307,18 +307,19 @@ async def segmentation(rgb: UploadFile = File(...), dem: UploadFile | None = Fil
 
 @app.get('/api/segmentation/checkpoint')
 def inspect_segmentation_checkpoint():
-    from app.checkpoints import inspect_checkpoint, resolve_checkpoint_config
+    from app.checkpoints import inspect_checkpoint, resolve_inference_config
+    from app.services.segmentation import modern_backend
     cfg = config()['segmentation']
     path = ROOT / cfg['multimodal_weights']
     if not path.is_file():
-        raise HTTPException(404, '尚未找到双模态分割权重。')
+        raise HTTPException(404, f"尚未找到双模态分割权重：{cfg['multimodal_weights']}。请放入与 M2F-DeepLab 推理网络匹配的完整 checkpoint。")
     try:
         info = inspect_checkpoint(path)
-        effective, sources = resolve_checkpoint_config(cfg, info)
+        effective, sources = resolve_inference_config(cfg, info, modern=modern_backend(cfg))
     except (ValueError, OSError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return {'checkpoint': info, 'effective': {key: effective.get(key) for key in
-            ('model_name', 'output_stride', 'num_classes', 'input_size', 'tile_overlap')}, 'sources': sources}
+            ('model_name', 'output_stride', 'num_classes', 'input_size', 'tile_overlap', 'eval_resize', 'strategy', 'separable_conv')}, 'sources': sources}
 
 
 @app.post('/api/video')

@@ -19,13 +19,11 @@ class SeparableConv2d(nn.Module):
         super(SeparableConv2d, self).__init__()
         self.relu0 = nn.ReLU(inplace=inplace)
 
-        # depthwise：groups = in_channels
         self.depthwise = nn.Conv2d(in_channels, in_channels, kernel_size,
                                    stride, padding, dilation, groups=in_channels, bias=bias)
         self.bn1 = nn.BatchNorm2d(in_channels, momentum=bn_mom)
         self.relu1 = nn.ReLU(inplace=True)
 
-        # pointwise：1x1 卷积做通道变换
         self.pointwise = nn.Conv2d(in_channels, out_channels,
                                    1, 1, 0, 1, 1, bias=bias)
         self.bn2 = nn.BatchNorm2d(out_channels, momentum=bn_mom)
@@ -70,21 +68,19 @@ class Block(nn.Module):
 
         self.head_relu = True
         if out_filters != in_filters or strides != 1:
-            # 输出通道 / 步长不一致时，用 1x1 conv 做 skip 投影
+
             self.skip = nn.Conv2d(in_filters, out_filters, 1, stride=strides, bias=False)
             self.skipbn = nn.BatchNorm2d(out_filters, momentum=bn_mom)
             self.head_relu = False
         else:
             self.skip = None
 
-        # 这一层的中间特征，用于 hook（低层特征）
         self.hook_layer = None
         if grow_first:
             filters = out_filters
         else:
             filters = in_filters
 
-        # 三个串联的可分离卷积
         self.sepconv1 = SeparableConv2d(in_filters, filters, 3, stride=1, padding=1 * atrous[0],
                                         dilation=atrous[0], bias=False, activate_first=activate_first,
                                         inplace=self.head_relu)
@@ -102,7 +98,7 @@ class Block(nn.Module):
 
         x = self.sepconv1(inp)
         x = self.sepconv2(x)
-        # 这里保留中间特征，给主干外部拿低层特征用
+
         self.hook_layer = x
         x = self.sepconv3(x)
 
@@ -131,34 +127,30 @@ class Xception(nn.Module):
         super(Xception, self).__init__()
 
         if downsample_factor == 8:
-            # 最后两个下采样位点改成 dilation，整体 OS=8
+
             stride_list = [2, 1, 1]
         elif downsample_factor == 16:
-            # 标准 Xception：OS=16
+
             stride_list = [2, 2, 1]
         else:
             raise ValueError("xception.py: output stride=%d is not supported (only 8 or 16)." % downsample_factor)
 
-        # 允许把 middle_blocks 调到 8（轻量版）或 16（论文中较重的版本）
         self.middle_blocks = max(1, min(16, int(middle_blocks)))
 
-        # -------- Entry flow --------
         self.conv1 = nn.Conv2d(3, 32, 3, 2, 1, bias=False)
         self.bn1 = nn.BatchNorm2d(32, momentum=bn_mom)
         self.relu = nn.ReLU(inplace=True)
 
         self.conv2 = nn.Conv2d(32, 64, 3, 1, 1, bias=False)
         self.bn2 = nn.BatchNorm2d(64, momentum=bn_mom)
-        # 这里不立刻 ReLU，forward 里再做
+
 
         self.block1 = Block(64, 128, strides=2)
         self.block2 = Block(128, 256, strides=stride_list[0], inplace=False)
         self.block3 = Block(256, 728, strides=stride_list[1])
 
-        # -------- Middle flow（最多 16 个 Block，都带 atrous=rate） --------
         rate = 16 // downsample_factor
 
-        # 和原实现保持一致：先全部构建 block4 ~ block19
         self.block4 = Block(728, 728, 1, atrous=rate)
         self.block5 = Block(728, 728, 1, atrous=rate)
         self.block6 = Block(728, 728, 1, atrous=rate)
@@ -174,13 +166,11 @@ class Xception(nn.Module):
         self.block14 = Block(728, 728, 1, atrous=rate)
         self.block15 = Block(728, 728, 1, atrous=rate)
 
-        # 下面这 4 个在原实现里写成 atrous=[rate, rate, rate]，效果与 atrous=rate 相同
         self.block16 = Block(728, 728, 1, atrous=[rate, rate, rate])
         self.block17 = Block(728, 728, 1, atrous=[rate, rate, rate])
         self.block18 = Block(728, 728, 1, atrous=[rate, rate, rate])
         self.block19 = Block(728, 728, 1, atrous=[rate, rate, rate])
 
-        # 为了在 forward 里统一循环，这里收集一下中间所有 block
         self._middle_flow = [
             self.block4,
             self.block5,
@@ -199,7 +189,6 @@ class Xception(nn.Module):
             self.block18,
             self.block19, ]
 
-        # -------- Exit flow --------
         self.block20 = Block(728, 1024, strides=stride_list[2], atrous=rate, grow_first=False)
 
         self.conv3 = SeparableConv2d(1024, 1536, 3, 1,
@@ -209,7 +198,6 @@ class Xception(nn.Module):
         self.conv5 = SeparableConv2d(1536, 2048, 3, 1,
                                      padding=1 * rate, dilation=rate, activate_first=False)
 
-        # ------- 参数初始化（保持原实现风格） -------
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -217,7 +205,7 @@ class Xception(nn.Module):
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
-        # ----------------------------------------
+
 
     def forward(self, input):
         """
@@ -226,7 +214,6 @@ class Xception(nn.Module):
             x                 : 高层特征（2048 通道），给 ASPP / decoder 使用
         """
 
-        # ------ entry flow ------
         x = self.conv1(input)
         x = self.bn1(x)
         x = self.relu(x)
@@ -242,26 +229,17 @@ class Xception(nn.Module):
         x = self.block3(x)
 
 
-        # ------ middle flow：只执行前 middle_blocks 个 block ------
-        # 默认 middle_blocks=16 => 执行 block4~block19（原版行为）
-        # 若 middle_blocks=8   => 只执行 block4~block11（轻量版）
         for idx, block in enumerate(self._middle_flow):
             if idx >= self.middle_blocks:
                 break
             x = block(x)
 
-        # 【新增：截取 middle_flow 的输出作为辅分支特征】
-        aux_feat = x
-            
-        # ------ exit flow ------
         x = self.block20(x)
         x = self.conv3(x)
         x = self.conv4(x)
         x = self.conv5(x)
 
-        # 【修改返回值：把 aux_feat 一并返回】
-        return low_featrue_layer, aux_feat, x
-
+        return low_featrue_layer, x
 
 
 def xception(pretrained=False, downsample_factor=16, middle_blocks=16):
@@ -326,7 +304,6 @@ class XceptionBackbone(nn.Module):
             raise ValueError(
                 f"XceptionBackbone 目前只支持 output_stride=8 或 16, 但得到 {output_stride}" )
 
-        # 选择具体的 Xception 变体
         if variant == "xception8":
             backbone_fn = xception8
         elif variant in ("xception16", "xception"):
@@ -334,19 +311,17 @@ class XceptionBackbone(nn.Module):
         else:
             raise ValueError(f"Unknown Xception variant: {variant}")
 
-        # 调用本文件里的工厂函数构建 backbone
         self.backbone = backbone_fn(
             downsample_factor=output_stride,
             pretrained=pretrained_backbone,
         )
 
     def forward(self, x):
-        # 注意：这里假设 Xception.forward 返回的是 (low_level, high_level)
-        # 【修改接收值：接收三个返回值】
-        low_level, aux_level, high_level = self.backbone(x)
+
+
+        low_level, high_level = self.backbone(x)
 
         return {
             "out": high_level,
             "low_level": low_level,
-            "aux": aux_level  # 【新增：把辅分支特征放进字典传给 Decoder】
         }

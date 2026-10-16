@@ -3,112 +3,317 @@
 <style>
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f2f5f9;color:#26394c;font:16px/1.9 "Segoe UI","Microsoft YaHei",sans-serif}main{max-width:1120px;margin:36px auto;padding:45px 55px;background:white;border:1px solid #dce4eb;border-radius:12px}h1{font-size:30px;color:#153c60}h2{font-size:24px;border-top:1px solid #dce4eb;padding-top:28px;margin-top:42px}h3{font-size:19px;margin-top:28px}a{color:#2363b9;overflow-wrap:anywhere}pre{background:#132a3c;color:#e2edf7;border-radius:6px;padding:20px;overflow:auto;font:14px/1.8 Consolas,monospace}code{font-family:Consolas,monospace;overflow-wrap:anywhere}p code,li code,td code{background:#edf2f8;color:#3a628a;padding:2px 5px;border-radius:3px}table{border-collapse:collapse;width:100%;display:block;overflow:auto;margin:20px 0;font-size:14px}td,th{border:1px solid #dce4eb;padding:10px 14px;text-align:left;vertical-align:top}th{background:#eef4fb}blockquote{border-left:4px solid #638ecc;background:#f0f5fc;padding:10px 18px;margin:20px 0;color:#526d86}li{margin:7px 0}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;border-bottom:1px solid #dce4eb;padding-bottom:20px;font-size:13px;color:#6b839b}.top a{border:1px solid #cbd9e7;border-radius:5px;padding:6px 12px;text-decoration:none}.toc{background:#f6f9fc;padding:18px 25px;border:1px solid #dce4eb;border-radius:6px}.toc ul{padding-left:22px}.toc li{font-size:14px;margin:3px 0}@media(max-width:700px){main{margin:0;padding:22px 18px;border:0;border-radius:0}h1{font-size:25px}body{font-size:15px}}@media print{body{background:white}main{border:0;margin:0;padding:0;max-width:none}.top,.toc{display:none}pre{white-space:pre-wrap;background:#f1f3f5;color:#24374a}h2,h3{break-after:avoid}tr{break-inside:avoid}a{color:inherit}}
 </style></head><body><main><div class="top"><span>LANDSLIDE STUDIO / 本地工作台操作手册</span><a href="http://127.0.0.1:8765">打开平台 ↗</a></div><h1 id="landslidestudio">LandslideStudio 使用指南</h1>
-<p>滑坡影像分析平台：集成遥感影像合成、多模态语义分割、光流视频分析，以及基于上海交通大学致远一号AI模型API的辅助分析与报告生成。采用 FastAPI 后端与 HTML/CSS/JavaScript 前端，在本机浏览器中运行。</p>
-<p>本仓库提供部署所需源码、示例配置及安装启动脚本，不包含基础模型、LoRA、分割权重、API Key、数据集及个人运行结果。</p>
-<h2 id="_1">功能</h2>
-<ul>
-<li><strong>遥感影像合成</strong>：支持 Stable Diffusion 1.5、Stable Diffusion 2.1、SDXL；按模型与类别加载 LoRA，自动补充滑坡/非滑坡激活词。</li>
-<li><strong>滑坡语义分割</strong>：调用 M2FDeepLabV3Plus 推理网络，支持 RGB+DEM 和 RGB-only 输入，输出掩膜、叠加图及统计结果。</li>
-<li><strong>滑坡视频分析</strong>：稀疏/稠密光流、轨迹可视化、视频与记录数据导出、任意帧速度分布图及叠加图。</li>
-<li><strong>辅助分析与报告生成</strong>：通过配置的视觉/文本模型API生成报告；未调用大模型时明确标识为本地证据摘要。</li>
-<li><strong>任务与结果</strong>：可选任务命名、历史任务重命名、结果查看与下载。</li>
-</ul>
-<h2 id="windows">快速开始（Windows）</h2>
+<p>本指南按“准备环境—配置模型—提交分析—核对结果”的流程介绍本地工作台。四个分析模块可独立使用，按研究任务准备相应依赖和模型即可。</p>
+<p><a href="#installation">安装与启动</a> · <a href="#configuration">模型与 API 配置</a> · <a href="#generation">影像合成</a> · <a href="#segmentation">语义分割</a> · <a href="#video">视频分析</a> · <a href="#analysis">辅助报告</a> · <a href="#maintenance">结果与维护</a> · <a href="#troubleshooting">常见问题</a></p>
+<p><a id="installation"></a></p>
+<h2 id="1">1. 安装与启动</h2>
+<h3 id="11">1.1 选择运行环境</h3>
+<p>在 Windows 上安装 Python 3.10，并包含 Windows Python Launcher。将仓库解压到固定目录，以下脚本均从工作台根目录运行。</p>
+<table>
+<thead>
+<tr>
+<th>使用需求</th>
+<th>安装步骤</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>浏览界面、光流分析、API 报告</td>
+<td>运行 <code>01_安装基础环境.cmd</code></td>
+</tr>
+<tr>
+<td>NVIDIA GPU 影像合成或分割</td>
+<td>先安装基础环境，再运行 <code>02_安装AI环境.cmd</code></td>
+</tr>
+<tr>
+<td>CPU 影像合成或分割</td>
+<td>先安装基础环境，再运行 <code>02b_安装CPU推理环境.cmd</code></td>
+</tr>
+</tbody>
+</table>
+<p>GPU 脚本安装 PyTorch 2.7.1 / torchvision 0.22.1 的 CUDA 12.6 版本，需要兼容的 NVIDIA 驱动。CPU 可以运行推理，但较大模型与影像的处理速度受硬件限制。</p>
+<h3 id="12">1.2 创建个人配置</h3>
+<p>将 <code>.env.example</code> 复制为 <code>.env</code>，将 <code>config.example.json</code> 复制为 <code>config.local.json</code>。前者保存 API 密钥，后者设置模型位置和推理参数。示例中相对路径以工作台根目录为基准。</p>
+<p>基础模型、LoRA、分割权重、API 密钥、数据集和个人结果不包含在源码仓库中。修改个人配置后，通过“模型与配置”页面刷新状态；安装或更换依赖后应重新启动服务。</p>
+<h3 id="13">1.3 启动、检查与停止</h3>
 <ol>
-<li>安装 Python 3.10（包含 Windows Python Launcher），下载或克隆本仓库并解压到本地目录。</li>
-<li>双击 <code>01_安装基础环境.cmd</code>，安装界面、API和光流依赖。</li>
-<li>需要影像生成或语义分割时，双击 <code>02_安装AI环境.cmd</code>。当前脚本安装 PyTorch 2.7.1 / torchvision 0.22.1 的 CUDA 12.6 版本，需要兼容的 NVIDIA 显卡驱动。无可用 NVIDIA GPU 时可选择 <code>02b_安装CPU推理环境.cmd</code>，实际推理速度取决于硬件。</li>
-<li>按下节放置模型，并将 <code>.env.example</code> 复制为 <code>.env</code>、<code>config.example.json</code> 复制为 <code>config.local.json</code>，填写自己的配置。</li>
-<li>双击 <code>00_启动平台.cmd</code>，在浏览器打开 <code>http://127.0.0.1:8765</code>。可用 <code>04_环境自检.cmd</code> 检查环境及文件状态。</li>
-<li>结束使用时运行 <code>03_停止平台.cmd</code>。只关闭浏览器标签页不会停止后台服务。</li>
+<li>运行 <code>00_启动平台.cmd</code>。</li>
+<li>在浏览器打开 <a href="http://127.0.0.1:8765">LandslideStudio</a>。</li>
+<li>查看“模型与配置”页面；如需检查依赖和模型文件，运行 <code>04_环境自检.cmd</code>。</li>
+<li>结束使用时运行 <code>03_停止平台.cmd</code>。</li>
 </ol>
-<p>只查看界面或使用光流分析，无需先下载所有模型。不同功能按自己的依赖与模型配置启用。服务默认仅在本机使用，不包含面向公网的账户认证或多用户权限管理。</p>
-<h2 id="_2">模型与配置</h2>
-<pre><code class="language-text">models/
-  base/
-    sd15/       # 完整 Diffusers 格式基础模型
-    sd21/       # 当前下载脚本选用 SD 2.1 768 版本
-    sdxl/       # SDXL Base 1.0
-  lora/
-    sd15/
-    sd21/
-    sdxl/
-  segmentation/
-    rgb_dem.pth
-</code></pre>
-<p>可运行 <code>07_下载或续传基础模型.cmd</code> 下载三个基础模型，支持续传；文件来源和固定版本记录在 <code>scripts/model_sources.json</code>。也可在安装环境后单独下载：</p>
+<p>“已放置”表示文件存在，模型能否加载仍取决于结构、内容和训练配置是否匹配。关闭浏览器不会停止后台服务。</p>
+<p><a id="configuration"></a></p>
+<h2 id="2-api">2. 模型与 API 配置</h2>
+<h3 id="21-lora">2.1 基础模型和 LoRA</h3>
+<p>基础模型按以下约定存放，均需为完整 Diffusers 目录，包含 <code>model_index.json</code> 和对应组件：</p>
+<table>
+<thead>
+<tr>
+<th>页面选项</th>
+<th>基础模型目录</th>
+<th>对应 LoRA 目录</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stable Diffusion 1.5</td>
+<td><code>models/base/sd15/</code></td>
+<td><code>models/lora/sd15/</code></td>
+</tr>
+<tr>
+<td>Stable Diffusion 2.1</td>
+<td><code>models/base/sd21/</code>，下载版本为 768</td>
+<td><code>models/lora/sd21/</code></td>
+</tr>
+<tr>
+<td>Stable Diffusion XL</td>
+<td><code>models/base/sdxl/</code>，SDXL Base 1.0</td>
+<td><code>models/lora/sdxl/</code></td>
+</tr>
+</tbody>
+</table>
+<p>运行 <code>07_下载或续传基础模型.cmd</code> 可下载或续传基础模型。来源和固定版本记录在 <code>scripts/model_sources.json</code>。只下载一个模型时，在已安装的环境中运行，例如：</p>
 <pre><code class="language-powershell">.venv\Scripts\python.exe scripts/download_base.py sdxl
 </code></pre>
-<p>模型使用需遵循各自上游许可及使用条件。下载脚本不提供、也不会训练个人 LoRA 和分割权重。</p>
-<p>在每个 <code>models/lora/&lt;基础模型&gt;/</code> 目录中分别放置与该基础模型匹配的：</p>
+<p>在每个 LoRA 目录内，分别放入与该基础模型匹配的 <code>Southwest_China_Landslide.safetensors</code> 和 <code>Southwest_China_Terrain.safetensors</code>。两者对应滑坡和非滑坡类别。文件名相同不代表权重通用；模型家族、版本和训练配置应匹配，尤其需要区分 SD 2.1 的训练版本。</p>
+<p>下载脚本不提供个人 LoRA 或分割权重。使用前应核对各模型来源及许可条件。</p>
+<h3 id="22">2.2 分割权重</h3>
+<p>默认权重位置为 <code>models/segmentation/m2f_deeplab.pth</code>。使用 M2F-DeepLab 训练完成的权重，推荐完整 checkpoint，以保留网络名称、输出步长、类别数、评估尺寸等元数据。</p>
+<p>默认模型为完整 E 模型 <code>m2f_deeplabv3plus_xception16</code>，<code>num_classes=2</code>、<code>separable_conv=false</code>；未记录输出步长时，使用配置默认值 <code>output_stride=16</code>。架构设置必须与训练一致，不能通过任意修改参数消除加载错误。</p>
+<p>“滑坡语义分割”页面的“检查权重可识别的参数”可读取 checkpoint 元数据；也可在命令行检查：</p>
+<pre><code class="language-powershell">.venv\Scripts\python.exe scripts/inspect_weights.py models/segmentation/m2f_deeplab.pth
+</code></pre>
+<p>检查结果区分明确记录的参数与从已知输出层形状识别的信息。输出步长、训练裁剪尺寸和地形通道编码不能仅凭卷积权重形状可靠推断。有关页面参数和输入要求，见本页<a href="#segmentation">语义分割</a>。</p>
+<h3 id="23-aiapi">2.3 上海交通大学致远一号AI模型API</h3>
+<p>在 <code>.env</code> 中设置 <code>SJTU_API_KEY</code>；在 <code>config.local.json</code> 的 <code>llm</code> 中填写服务地址和账户可访问的模型 ID。按模型实际能力设置 <code>supports_vision</code>：需要直接分析影像时，必须选用支持图像输入的模型。</p>
+<p>示例模型 ID 不保证对所有账户开放。连接失败时，核对密钥、模型权限、服务地址以及校园网络或 VPN 条件。不要将 <code>.env</code>、个人配置或密钥提交到源码仓库。</p>
+<p><a id="generation"></a></p>
+<h2 id="3">3. 遥感影像合成</h2>
+<ol>
+<li>选择已准备好的基础模型和影像类别。</li>
+<li>输入场景提示词，可描述地形、植被、光照及俯视角度。</li>
+<li>设置输出尺寸和数量；首次使用可从较小尺寸、单张输出开始。</li>
+<li>按需调整采样步数、CFG、LoRA 强度和随机种子，然后提交任务。</li>
+<li>核对生成影像并下载结果，保存生成参数以便比较。</li>
+</ol>
+<p>类别会自动加入对应激活词：滑坡为 <code>Southwest_China_Landslide</code>，非滑坡为 <code>Southwest_China_Terrain</code>，无需重复填写。固定随机种子有助于对照参数变化，<code>-1</code> 表示随机种子。</p>
+<p>合成影像用于研究和数据探索，不代表真实观测。比较不同实验时应同时记录基础模型、LoRA、尺寸、种子和提示词。</p>
+<p><a id="segmentation"></a></p>
+<h2 id="4">4. 滑坡语义分割</h2>
+<h3 id="41">4.1 准备输入</h3>
+<p>RGB 输入应为与训练预处理一致的 8 位影像。RGB TIFF 默认使用第 1、2、3 波段作为红、绿、蓝，不会对高位深影像自动拉伸。</p>
+<p>DEM 为可选输入，必须是训练流程制作的 <code>uint8</code> 三通道高程/坡度/坡向地形图。保留训练时的文件解码通道顺序与像素编码，不要将原始单波段高程、任意灰度图或视觉相似的伪彩色图片替代该输入。RGB 与地形图均按 ImageNet 均值和标准差归一化。</p>
+<p>RGB 与 DEM 需要逐像元配准。带地理参考的文件会核对 CRS、仿射变换和尺寸；普通图片必须具有一致的尺寸、覆盖范围、方向及像元位置，并由使用者勾选配准确认。尺寸相同本身不能证明配准正确。</p>
+<h3 id="42">4.2 选择输入路径</h3>
 <table>
 <thead>
 <tr>
-<th>类别</th>
-<th>文件名</th>
-<th>自动添加的激活词</th>
+<th>输入与模型</th>
+<th>实际处理路径</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>滑坡</td>
-<td><code>Southwest_China_Landslide.safetensors</code></td>
-<td><code>Southwest_China_Landslide</code></td>
+<td>RGB+DEM、双流模型</td>
+<td>显式 <code>has_dem=True</code>，使用真实地形特征</td>
 </tr>
 <tr>
-<td>非滑坡</td>
-<td><code>Southwest_China_Terrain.safetensors</code></td>
-<td><code>Southwest_China_Terrain</code></td>
+<td>仅 RGB、完整 E 模型</td>
+<td>显式 <code>has_dem=False</code>，使用 FHM 特征补全</td>
+</tr>
+<tr>
+<td>仅 RGB、B 变体</td>
+<td>使用零地形特征</td>
+</tr>
+<tr>
+<td>A 变体</td>
+<td>RGB 单流，需要对应训练权重</td>
 </tr>
 </tbody>
 </table>
-<p>LoRA 不能在不同基础模型之间直接混用；SD 2.1 的版本与训练配置也应一致。基础模型目录需要包含 <code>model_index.json</code> 及对应组件，不能只放一个权重文件。</p>
-<p>将双模态分割权重放在 <code>models/segmentation/rgb_dem.pth</code>。默认网络为 <code>m2f_deeplabv3plus_xception16</code>、<code>output_stride=16</code>、类别数 2；以实际训练配置为准。平台会读取可获取的 checkpoint 元数据，未记录的参数仍需人工核对。DEM 输入是预先制作且与 RGB 配准的三通道高程、坡度、坡向伪彩色图，不应直接替换成任意灰度图。RGB-only 使用缺失 DEM 的配置策略，并不意味着双模态权重变成了独立训练的 RGB 模型。</p>
-<p>在 <code>.env</code> 中设置自己的 <code>SJTU_API_KEY</code>。在 <code>config.local.json</code> 的 <code>llm</code> 配置中填写服务地址、账户可用的模型ID，并按模型实际能力设置 <code>supports_vision</code>。示例模型ID不保证对所有账户有效；视觉分析需选用支持图像输入的模型。不要提交 <code>.env</code> 或个人配置文件。</p>
-<h2 id="_3">使用与结果</h2>
-<p>四个功能页面均提供“任务名称（可选）”；未填写时保留任务类型名称，填写后显示为“任务类型-任务名称”。历史任务可在“任务与结果”中重命名。</p>
-<p>运行结果保存在 <code>data/jobs/&lt;任务ID&gt;/</code>，缓存位于 <code>.cache/</code>，日志位于 <code>logs/</code>。视频分析及逐点记录可能占用较大磁盘空间。需要清理时，先停止服务，备份有用结果后再删除不需要的任务目录；删除任务目录会同时移除其结果。</p>
-<p>光流速度默认依据图像像素位移和帧率计算。只有提供适当的空间尺度标定时才能解释为物理速度；单一尺度不能消除透视造成的全部误差。模型输出用于研究和辅助判读，不等同于经现场核验的灾害结论。</p>
-<p>移动目录后应重新启动服务；更换电脑或虚拟环境失效时使用 <code>06_迁移后重建环境.cmd</code> 重建依赖，并检查个人配置中的绝对路径。不要把另一台电脑的 <code>.venv</code> 当作通用可移植环境。</p>
-<h2 id="_4">目录结构</h2>
+<p>RGB-only 使用相应网络的缺失模态推理能力，效果取决于权重训练；上传 DEM 不会自动将 RGB 单流权重转换成双流模型。</p>
+<h3 id="43">4.3 设置输出步长与推理尺寸</h3>
+<p>默认保留自动选项。平台优先读取 checkpoint 明确记录的参数；没有步长记录时，使用配置值 16。手动选择步长 8 或 16 必须与训练一致，与已有记录冲突会停止运行。</p>
 <table>
 <thead>
 <tr>
-<th>路径</th>
-<th>用途</th>
+<th>影像处理方式</th>
+<th>行为</th>
+<th>适用场景</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>app/</code></td>
-<td>FastAPI 服务、任务管理和四个功能适配器</td>
+<td>自动 <code>auto</code></td>
+<td>读取 <code>eval_resize</code> / <code>val_size</code>；缺省为 256，值为 0 时按原图推理</td>
+<td>复现 checkpoint 的评估尺寸约定</td>
 </tr>
 <tr>
-<td><code>dist/</code></td>
-<td>浏览器界面，无需额外前端构建步骤</td>
+<td>原图 <code>native</code></td>
+<td>不缩放、不分块，忽略窗口尺寸和重叠</td>
+<td>需要保留输入尺寸且显存足够</td>
 </tr>
 <tr>
-<td><code>scripts/</code></td>
-<td>安装、启停、自检、下载和权重检查工具</td>
+<td>缩放 <code>resize</code></td>
+<td>整图缩放到指定正方形尺寸，推理后恢复原尺寸</td>
+<td>明确使用统一评估尺寸</td>
 </tr>
 <tr>
-<td><code>vendor/M2FDeepLabV3Plus/network/</code></td>
-<td>分割推理所需的原始网络定义</td>
-</tr>
-<tr>
-<td><code>docs/使用指南.html</code></td>
-<td>平台内可打开的简明使用指南</td>
-</tr>
-<tr>
-<td><code>config.example.json</code>、<code>.env.example</code></td>
-<td>无个人密钥的示例配置</td>
+<td>滑窗 <code>tiles</code></td>
+<td>分块推理并融合重叠区概率</td>
+<td>大图或显存受限</td>
 </tr>
 </tbody>
 </table>
-<h2 id="_5">算法来源</h2>
-<ul>
-<li><a href="https://github.com/GreenLantern-Kevin/M2FDeepLabV3Plus">M2FDeepLabV3Plus</a>：分割网络；本仓库仅附推理所需网络定义，版本见 <code>vendor/M2FDeepLabV3Plus/UPSTREAM.md</code>。</li>
-<li><a href="https://github.com/GreenLantern-Kevin/Optical-Flow-Seismic-Rock-Avalanche-Detection">Optical-Flow-Seismic-Rock-Avalanche-Detection</a>：光流研究代码；平台包含适合后台任务执行的改编实现。</li>
-<li>影像生成通过 Hugging Face Diffusers 加载 Stable Diffusion 系列模型与 LoRA。</li>
-</ul>
-<p>仓库发布不改变第三方代码或模型各自的许可条件。</p></main></body></html>
+<p>窗口/缩放尺寸可留空自动读取；手动输入须为 64–1024 的整数，无需是 16 的倍数。滑窗重叠须大于等于 0 且小于窗口尺寸。自动模式下手动填写尺寸，会在本次任务中使用该尺寸缩放。</p>
+<p><code>crop_size</code> 是训练裁剪参数，不等同于 <code>eval_resize</code> / <code>val_size</code>。改变尺寸或改用滑窗可能改变结果，比较实验时应保持策略一致。</p>
+<h3 id="44">4.4 提交与核对结果</h3>
+<p>上传 RGB 和可选地形图，完成必要的配准确认，设置叠加透明度后提交。先查看原图与叠加图的空间对应关系，再核对掩膜和统计。</p>
+<table>
+<thead>
+<tr>
+<th>输出</th>
+<th>解释</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mask.png</code></td>
+<td>0 为背景或无效像素，255 为滑坡候选像素</td>
+</tr>
+<tr>
+<td><code>valid_mask.png</code></td>
+<td>255 为有效像素；用于区分背景和无效区域</td>
+</tr>
+<tr>
+<td><code>overlay.png</code></td>
+<td>在 RGB 上标出候选区域</td>
+</tr>
+<tr>
+<td><code>probability.npy</code>、<code>probability.png</code></td>
+<td>原始滑坡类别概率与预览；原始数组的无效像素为 NaN</td>
+</tr>
+<tr>
+<td><code>metrics.json</code></td>
+<td>输入、有效参数及来源、模态路径、加载信息和区域统计</td>
+</tr>
+<tr>
+<td><code>mask_geo.tif</code></td>
+<td>有地理参考时导出，0 为背景、1 为滑坡、255 为无效值</td>
+</tr>
+</tbody>
+</table>
+<p>候选面积默认以像素数和有效区域占比表示；仅在具备可用投影和长度单位时计算平方米。概率未经校准，像素占比不等于滑坡发生概率。没有真值标签时不计算准确率、IoU 或 F1。</p>
+<h3 id="45">4.5 权重兼容范围</h3>
+<p>平台使用 <code>weights_only=True</code> 读取权重，逐项检查推理参数名称与形状，并以 <code>strict=True</code> 加载。对于明确记录默认 Xception16 架构、步长 8/16、两类且 <code>separable_conv=false</code> 的 schema 2 checkpoint，只有全部 1674 项推理参数一致、并且仅多出八项形状完全匹配的训练辅助头参数时，才在内存中排除该辅助头后严格加载。原权重文件保持不变。</p>
+<p>其他缺失、未知或形状不符的参数会报错。该规则不是通用部分加载，也不保证所有训练版本或 checkpoint 兼容。源码仓库中的“分割推理说明”提供完整参数约定与辅助头形状清单。</p>
+<p><a id="video"></a></p>
+<h2 id="5">5. 滑坡视频分析</h2>
+<h3 id="51">5.1 选择算法和分析范围</h3>
+<p>稀疏光流采用 Lucas–Kanade 跟踪特征点，提供双向一致性检查、周期补点与轨迹筛选；稠密光流采用 Farnebäck 估计图像区域内的运动向量。两者的采样方式不同，统计量应在同一算法和参数条件下比较。</p>
+<ol>
+<li>上传视频，选择算法和运动噪声阈值。</li>
+<li>按需限制 ROI；坐标以处理画面的比例表示，左上角为 <code>(0, 0)</code>。</li>
+<li>如启用背景特征防抖，在 ROI 外保留足够的静态背景。</li>
+<li>默认按原始尺寸处理；高分辨率视频可选择限制最大宽度，保持长宽比且不放大。</li>
+<li>提交任务，检查分析视频、轨迹及逐帧记录。</li>
+</ol>
+<h3 id="52">5.2 调整可视化</h3>
+<p>稀疏模式的轨迹长度控制保留的运动历史，最小净位移决定何时绘制轨迹，补点间隔决定更新频率。轨迹不明显时，应先核对运动尺度与这些阈值。</p>
+<p>稠密模式的向量采样间隔控制显示密度，箭头长度倍率和运动幅值显示增益增强可视化，不改变计算速度。处理结果支持任意帧速度分布图及原图叠加，可结合逐帧数据查看局部运动。</p>
+<h3 id="53">5.3 解释输出</h3>
+<p>分析视频采用四宫格，宽、高分别为处理画面的两倍，导出视频不保留原音轨。速度以处理分辨率下的 px/s 表示；缩放会改变像素位移与速度数值，跨任务比较时需保持处理尺寸、帧率和参数一致。</p>
+<p>空间尺度和相机几何未标定时，不应将 px/s 当作 m/s。相机运动、光照、植被和遮挡均可能影响光流；防抖失败或无有效测量不能解释为地表静止。光流能量为位移平方和，不是物理动能，稀疏与稠密结果不能直接比较能量大小。</p>
+<p><a id="analysis"></a></p>
+<h2 id="6">6. 辅助分析与报告生成</h2>
+<h3 id="61">6.1 选择证据和分析方式</h3>
+<p>可上传影像、关联已完成的分割或视频结果，并填写现场背景与关注问题。关联结果应来自同一场景；如需先计算候选区域，可选择对本次影像运行 RGB 分割。</p>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>使用依据</th>
+<th>是否调用 API</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>图像解读</td>
+<td>本次影像、关联指标和备注</td>
+<td>是；需要视觉模型，并勾选本次发送影像</td>
+</tr>
+<tr>
+<td>证据报告</td>
+<td>关联指标和备注，不发送图片</td>
+<td>是；使用文本能力</td>
+</tr>
+<tr>
+<td>本地证据摘要</td>
+<td>已有程序计算结果和备注</td>
+<td>否</td>
+</tr>
+</tbody>
+</table>
+<p>视觉模式还要求 <code>supports_vision=true</code>。文本模式没有看到影像，不能据此声称观察到裂缝、植被或裸土等视觉特征。本地摘要会明确说明未调用大模型；文本报告会明确说明没有接收影像。API 调用失败时，应查看错误原因，修正配置后重新提交。</p>
+<h3 id="62">6.2 核对报告</h3>
+<p>报告应区分程序计算结果、未经核验的现场描述、视觉观察、推断与未知项。核对其中的数值是否与关联结果一致，并保留模型与人工判断之间的差异。</p>
+<p>单幅影像不能确定滑坡发生时间、运动速度、诱因或未来失稳概率。像素尺寸不是地面空间分辨率；缺少可靠标定时，报告中的像素统计不能替代实地面积或风险判断。</p>
+<p><a id="maintenance"></a></p>
+<h2 id="7">7. 任务、结果与环境维护</h2>
+<p>四个模块均支持可选任务名称。留空时显示模块名称，填写后显示“模块名称-任务名称”；可在“任务与结果”中重命名并重新打开结果。</p>
+<p>输入、结果和报告保存在 <code>data/jobs/</code>，缓存位于 <code>.cache/</code>，日志位于 <code>logs/</code>。视频与逐点记录可能占用较大空间。清理前运行 <code>03_停止平台.cmd</code>，备份所需数据，再删除不再需要的任务目录；删除目录会一并移除其中的输入和结果。</p>
+<p>迁移到其他电脑或虚拟环境失效时，运行 <code>06_迁移后重建环境.cmd</code> 重新创建 <code>.venv</code>，再检查模型文件和个人配置。不要将已有 <code>.venv</code> 视为跨电脑通用环境。服务面向本机使用，未提供公网账户认证或多用户权限管理。</p>
+<p><a id="troubleshooting"></a></p>
+<h2 id="8">8. 常见问题</h2>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>检查与处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>提示缺少基础或 AI 依赖</td>
+<td>按所用功能运行对应安装脚本，完成后重启服务</td>
+</tr>
+<tr>
+<td>基础模型已下载但不能加载</td>
+<td>检查是否为完整 Diffusers 目录、下载是否完整，以及 LoRA 是否匹配</td>
+</tr>
+<tr>
+<td>分割权重结构不匹配</td>
+<td>核对网络版本、模型名称、类别数、可分离卷积设置及完整 checkpoint；不要跳过严格校验</td>
+</tr>
+<tr>
+<td>无法安全读取 checkpoint</td>
+<td>保留 <code>weights_only=True</code>；在可信训练环境中导出纯参数字典，并单独保留可用元数据</td>
+</tr>
+<tr>
+<td>分割步长冲突</td>
+<td>使用 checkpoint 记录的 8 或 16；未记录时从训练配置确认，不从张量形状猜测</td>
+</tr>
+<tr>
+<td>DEM 类型或配准检查失败</td>
+<td>使用训练格式的三通道 <code>uint8</code> 地形图，并在 GIS 中完成配准</td>
+</tr>
+<tr>
+<td>分割显存不足</td>
+<td>使用滑窗，例如窗口 256、重叠 64；同时检查其他程序的显存占用</td>
+</tr>
+<tr>
+<td>GPU 不可用</td>
+<td>核对驱动与 CUDA 版 PyTorch；无适用 GPU 时安装 CPU 环境</td>
+</tr>
+<tr>
+<td>API 报告失败</td>
+<td>查看原因，核对密钥、服务地址、模型权限、视觉能力和网络条件</td>
+</tr>
+<tr>
+<td>关闭网页后服务仍在运行</td>
+<td>运行 <code>03_停止平台.cmd</code></td>
+</tr>
+</tbody>
+</table>
+<p>M2F-DeepLab 接入固定于提交 <code>e655ee310f5e9dfafceb33ca2afc92f214e14c29</code>，平台只执行推理。RGB+DEM 与 RGB-only 两条 GPU 路径已用真实训练权重验证；尚未形成正式精度基准，跨区域或跨数据来源使用仍需独立验证。</p></main></body></html>

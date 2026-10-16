@@ -43,24 +43,21 @@ class DeepLabHeadV3Plus(nn.Module):
       4) concat([low_level(48), aspp(256)]) => 304 通道
       5) 3x3 Conv(304->256) + 1x1 Conv(256->num_classes) 输出 logits
     """
-    # 加入 aux_channels 参数
 
-    def __init__(self, in_channels, low_level_channels, num_classes, aspp_dilate=(12, 24, 36), aux_channels=None):
+
+    def __init__(self, in_channels, low_level_channels, num_classes, aspp_dilate=(12, 24, 36)):
         super(DeepLabHeadV3Plus, self).__init__()
 
-        # (1) low-level feature projection：用 1x1 Conv 把 low_level_channels -> 48
-        # 论文里这样做是为了“减少 concat 后的计算量”（否则 low-level 通道太大会很慢）
+
         self.project = nn.Sequential(
             nn.Conv2d(low_level_channels, 48, 1, bias=False),
             nn.BatchNorm2d(48),
             nn.ReLU(inplace=True),
         )
 
-        # (2) ASPP：对高层 out 做多尺度空洞卷积融合
         self.aspp = ASPP(in_channels, aspp_dilate)
 
-        # (3) decoder classifier：concat 后 refinement + 输出类别 logits
-        # concat 后通道数 = 48 + 256 = 304
+
         self.classifier = nn.Sequential(
             nn.Conv2d(304, 256, 3, padding=1, bias=False),  # refinement（细化）
             nn.BatchNorm2d(256),
@@ -68,55 +65,28 @@ class DeepLabHeadV3Plus(nn.Module):
             nn.Conv2d(256, num_classes, 1)  # 类别预测
         )
         self._init_weight()
-        
-        # 【新增：单流 Aux 分支构造】
-        self.aux_channels = aux_channels
-        if aux_channels is not None:
-            self.aux_classifier = nn.Sequential(
-                nn.Conv2d(aux_channels, 256, 3, padding=1, bias=False),
-                nn.BatchNorm2d(256),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(256, num_classes, 1)
-            )
-            # 初始化 Aux 权重
-            for m in self.aux_classifier.modules():
-                if isinstance(m, nn.Conv2d):
-                    nn.init.kaiming_normal_(m.weight)
-                elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
-                    nn.init.constant_(m.weight, 1)
-                    nn.init.constant_(m.bias, 0)
 
     def forward(self, feature):
-        # low_level: stride=4 的细节特征（例如 ResNet 的 layer1 / Xception 的 block1）
+
         low_level_feature = self.project(feature['low_level'])
 
-        # out: 高层语义特征（stride=OS）
         output_feature = self.aspp(feature['out'])
 
-        # 将 ASPP 输出上采样到 low-level 的空间尺寸（这样才能 concat）
-        # - OS=16 时：out 通常是 1/16，low_level 是 1/4 => 上采样约 4倍
-        # - OS=8  时：out 通常是 1/8， low_level 是 1/4 => 上采样约 2倍
+
         output_feature = F.interpolate(output_feature, size=low_level_feature.shape[2:], mode='bilinear', align_corners=False)
 
-        # concat：沿通道维拼接，然后做分类预测
         return_feature = self.classifier(torch.cat([low_level_feature, output_feature], dim=1))
-        
-        # 【新增：如果传入了 aux 特征，就一起返回字典】
-        if self.aux_channels is not None and 'aux' in feature and feature['aux'] is not None:
-            aux_out = self.aux_classifier(feature['aux'])
-            return {'seg': return_feature, 'aux': aux_out}
-        else:
-            return return_feature
+
+        return return_feature
 
     def _init_weight(self):
-        # 常规初始化：Conv 用 kaiming，BN/GN 权重=1，bias=0
+
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight)
             elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
-
 
 
 class ASPPConv(nn.Sequential):
@@ -155,7 +125,7 @@ class ASPPPooling(nn.Sequential):
     def forward(self, x):
         size = x.shape[-2:]  # 记录输入特征图尺寸
         x = super(ASPPPooling, self).forward(x)
-        # pool 后是 1x1，插值回原尺寸
+
         return F.interpolate(x, size=size, mode='bilinear', align_corners=False)
 
 
@@ -179,24 +149,21 @@ class ASPP(nn.Module):
         out_channels = 256
 
         modules = []
-        # 分支1：1x1 conv
+
         modules.append(nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)))
 
-        # 分支2~4：不同 dilation 的 3x3 atrous conv
         rate1, rate2, rate3 = tuple(atrous_rates)
         modules.append(ASPPConv(in_channels, out_channels, rate1))
         modules.append(ASPPConv(in_channels, out_channels, rate2))
         modules.append(ASPPConv(in_channels, out_channels, rate3))
 
-        # 分支5：image pooling
         modules.append(ASPPPooling(in_channels, out_channels))
 
         self.convs = nn.ModuleList(modules)
 
-        # concat 后的融合：1x1 -> BN -> ReLU -> Dropout
         self.project = nn.Sequential(
             nn.Conv2d(5 * out_channels, out_channels, 1, bias=False),
             nn.BatchNorm2d(out_channels),
@@ -205,17 +172,14 @@ class ASPP(nn.Module):
         )
 
     def forward(self, x):
-        # 收集每个分支输出
+
         res = []
         for conv in self.convs:
             res.append(conv(x))
-        # 沿通道拼接
+
         res = torch.cat(res, dim=1)
-        # 1x1 融合/压缩
+
         return self.project(res)
-
-
-
 
 
 class AtrousSeparableConvolution(nn.Module):
@@ -233,13 +197,13 @@ class AtrousSeparableConvolution(nn.Module):
                  stride=1, padding=0, dilation=1, bias=True):
         super(AtrousSeparableConvolution, self).__init__()
         self.body = nn.Sequential(
-            # depthwise conv：每个输入通道独立做空间卷积
+
             nn.Conv2d(
                 in_channels, in_channels,
                 kernel_size=kernel_size, stride=stride, padding=padding,
                 dilation=dilation, bias=bias, groups=in_channels
             ),
-            # pointwise conv：1x1 混合通道
+
             nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=bias),
         )
         self._init_weight()
@@ -256,7 +220,6 @@ class AtrousSeparableConvolution(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
 
-
 def convert_to_separable_conv(module):
     """
     递归替换器：把 module 里所有 kernel_size>1 的 nn.Conv2d 替换成 AtrousSeparableConvolution。
@@ -267,7 +230,6 @@ def convert_to_separable_conv(module):
     """
     new_module = module
 
-    # 只替换普通卷积（Conv2d）且 kernel_size>1（例如 3x3）
     if isinstance(module, nn.Conv2d) and module.kernel_size[0] > 1:
         new_module = AtrousSeparableConvolution(
             module.in_channels,
@@ -279,7 +241,6 @@ def convert_to_separable_conv(module):
             module.bias
         )
 
-    # 递归替换子模块
     for name, child in module.named_children():
         new_module.add_module(name, convert_to_separable_conv(child))
 
@@ -291,11 +252,8 @@ class MEDeepLabHeadV3Plus(nn.Module):
     M-E DeepLab 的 Decoder：包含语义分支 (Semantic) 和 边缘分支 (Edge)
     """
 
-    # 原代码：
-    # def __init__(self, in_channels, low_level_channels, num_classes, aspp_dilate=(12, 24, 36)):
-    
-    # 修改为：
-    def __init__(self, in_channels, low_level_channels, num_classes, aspp_dilate=(12, 24, 36), aux_channels=1024):
+
+    def __init__(self, in_channels, low_level_channels, num_classes, aspp_dilate=(12, 24, 36)):
         super(MEDeepLabHeadV3Plus, self).__init__()
 
         self.project = nn.Sequential(
@@ -305,19 +263,9 @@ class MEDeepLabHeadV3Plus(nn.Module):
         )
         self.aspp = ASPP(in_channels, aspp_dilate)
 
-        # 拼接后的基础通道数
         concat_ch = 48 + 256
-        
-        # 【新增：深层监督辅分支 (Aux Head)】—— 接收 Layer3 的特征加速深层回传
-        # 【修改：使用动态 aux_channels 替代硬编码的 1024】
-        self.aux_classifier = nn.Sequential(
-            nn.Conv2d(aux_channels, 256, 3, padding=1, bias=False),  # 这里从 1024 改为 aux_channels
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, num_classes, 1)
-        )
 
-        # 【创新点 4：边界感知分支 (辅分支)】
+
         self.edge_classifier = nn.Sequential(
             nn.Conv2d(concat_ch, 64, 3, padding=1, bias=False),
             nn.BatchNorm2d(64),
@@ -325,7 +273,6 @@ class MEDeepLabHeadV3Plus(nn.Module):
             nn.Conv2d(64, 1, 1)  # 预测二值边界 (1个通道)
         )
 
-        # 【主分支】：输入变为 concat_ch + 1 (因为把边缘预测结果 Concat 进来作为引导)
         self.classifier = nn.Sequential(
             nn.Conv2d(concat_ch + 1, 256, 3, padding=1, bias=False),
             nn.BatchNorm2d(256),
@@ -333,7 +280,7 @@ class MEDeepLabHeadV3Plus(nn.Module):
             nn.Conv2d(256, num_classes, 1)
         )
         self._init_weight()
-        
+
 
     def forward(self, feature):
         low_level_feature = self.project(feature['low_level'])
@@ -342,23 +289,15 @@ class MEDeepLabHeadV3Plus(nn.Module):
             output_feature, size=low_level_feature.shape[2:], mode='bilinear', align_corners=False
         )
 
-        # 基础特征融合
         concat_feat = torch.cat([low_level_feature, output_feature], dim=1)
 
-        # 1. 预测边缘
         edge_logits = self.edge_classifier(concat_feat)
 
-        # 2. 边缘引导 (Edge Guidance): 将边缘特征拼接到主分支中
         seg_input = torch.cat([concat_feat, edge_logits], dim=1)
 
-        # 3. 预测滑坡语义掩码
         seg_logits = self.classifier(seg_input)
 
         res = {'seg': seg_logits, 'edge': edge_logits}
-
-        # 【新增：计算辅分支预测】
-        if 'aux' in feature and feature['aux'] is not None:
-            res['aux'] = self.aux_classifier(feature['aux'])
 
         return res
 

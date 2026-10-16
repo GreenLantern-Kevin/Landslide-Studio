@@ -47,7 +47,7 @@ def fixed_padding(kernel_size, dilation):
     pad_total = kernel_size_effective - 1
     pad_beg = pad_total // 2
     pad_end = pad_total - pad_beg
-    return (pad_beg, pad_end, pad_beg, pad_end) 
+    return (pad_beg, pad_end, pad_beg, pad_end)
 
 class InvertedResidual(nn.Module):
     def __init__(self, inp, oup, stride, dilation, expand_ratio):

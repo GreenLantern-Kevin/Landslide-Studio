@@ -19,6 +19,7 @@ PROGRESS.md
 models/**
 !models/**/
 !models/**/.gitkeep
+!models/**/放置说明.txt
 *.safetensors
 *.pth
 *.pt

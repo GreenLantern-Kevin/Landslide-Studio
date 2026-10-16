@@ -1,5 +1,5 @@
 """Inspect trusted user checkpoints safely, without running their Python objects.
-Usage: .venv\Scripts\python scripts\inspect_weights.py models\segmentation\rgb_dem.pth
+Usage: .venv\Scripts\python scripts\inspect_weights.py models\segmentation\m2f_deeplab.pth
 """
 import argparse
 import json

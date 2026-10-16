@@ -1,4 +1,4 @@
-"""Inference adapter for GreenLantern-Kevin/M2FDeepLabV3Plus.
+"""Inference adapter for M2F-DeepLab, with explicit legacy compatibility.
 
 Uses the repository's actual network factory, never its training entry point.
 All filenames returned below are relative to out_dir; the web layer adds URLs.
@@ -7,15 +7,22 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import inspect
 import json
 import sys
 from pathlib import Path
 
-from app.checkpoints import checkpoint_metadata, checkpoint_state, load_checkpoint, resolve_checkpoint_config
+from app.checkpoints import checkpoint_metadata, checkpoint_state, load_checkpoint, resolve_inference_config
 
 
-REVIEWED_COMMIT = "149234e452cd39c5524b2c6e536b445a854a121e"
+REVIEWED_COMMIT = "e655ee310f5e9dfafceb33ca2afc92f214e14c29"
+LEGACY_COMMIT = "149234e452cd39c5524b2c6e536b445a854a121e"
 DEFAULT_MODEL = "m2f_deeplabv3plus_xception16"
+
+
+def modern_backend(cfg):
+    return cfg.get("backend") == "m2f_deeplab" or (
+        not cfg.get("backend") and Path(cfg.get("repo_path", "")).name == "M2F-DeepLab")
 
 
 def _resolve(root: Path, value: str) -> Path:
@@ -47,24 +54,53 @@ def _checkpoint_state(checkpoint, torch):
     return checkpoint_state(checkpoint), checkpoint
 
 
+def _inference_state(state, expected, metadata, model_name, modern):
+    """Omit only the verified schema-2 training-only auxiliary head.
+
+    Every inference tensor must match first. Keep the checkpoint on disk
+    intact and retain strict=True; never tolerate arbitrary missing layers.
+    """
+    prefix = 'classifier.aux_classifier.'
+    shapes = {'0.weight': (256, 728, 3, 3), '1.weight': (256,),
+              '1.bias': (256,), '1.running_mean': (256,),
+              '1.running_var': (256,), '1.num_batches_tracked': (),
+              '3.weight': (2, 256, 1, 1), '3.bias': (2,)}
+    auxiliary = {prefix + key: shape for key, shape in shapes.items()}
+    extra = set(state) - set(expected)
+    recorded = metadata.get('recorded', {})
+    if (modern and metadata.get('schema') == 2
+            and model_name == DEFAULT_MODEL and recorded.get('model_name') == DEFAULT_MODEL
+            and recorded.get('output_stride') in (8, 16)
+            and recorded.get('num_classes') == 2 and recorded.get('separable_conv') is False
+            and extra == set(auxiliary) and not (set(expected) - set(state))
+            and all(tuple(state[k].shape) == shape for k, shape in auxiliary.items())
+            and all(state[k].shape == tensor.shape for k, tensor in expected.items())):
+        return {k: v for k, v in state.items() if k not in auxiliary}, sorted(auxiliary)
+    return state, []
+
+
 def _build_model(cfg, weights, model_name, repo, torch):
+    network = _load_network(repo)
+    modern = bool(getattr(network.modeling, "MODEL_NAMES", ()))
+    cfg = dict(cfg, backend="m2f_deeplab" if modern else "legacy")
     checkpoint = load_checkpoint(weights)
     state = checkpoint_state(checkpoint)
     metadata = checkpoint_metadata(checkpoint, state)
     # Release the checkpoint's optimizer/scheduler storage before allocating a
     # fresh inference network. The model tensors remain referenced by state.
     del checkpoint
-    cfg, sources = resolve_checkpoint_config(cfg, metadata, cfg.get("_request_overrides"))
+    cfg, sources = resolve_inference_config(cfg, metadata, cfg.get("_request_overrides"), modern=modern)
     model_name = cfg.get("model_name", model_name)
     if int(cfg.get("output_stride", 8)) not in (8, 16):
         raise ValueError("output_stride 只能是 8 或 16，必须与训练时相同。")
     if not 2 <= int(cfg.get("num_classes", 2)) <= 256:
         raise ValueError("当前适配器使用多类别 softmax 输出，num_classes 必须为 2–256。")
+    if modern and (int(cfg.get('num_classes', 2)) != 2 or int(cfg.get('landslide_class', 1)) != 1):
+        raise ValueError("M2F-DeepLab 推理使用 2 类输出，0=背景、1=滑坡，请核对权重和类别设置。")
     recorded_name = metadata["recorded"].get("model_name")
     if recorded_name and recorded_name != model_name:
         raise ValueError(f"模型配置 {model_name} 与权重记录 {recorded_name} 不一致，请修改模型名称。")
-    network = _load_network(repo)
-    allowed = {name for name in vars(network.modeling) if name.startswith(("m2f_deeplabv3plus_", "me_deeplabv3plus_", "single_deeplabv3plus_", "deeplabv3plus_"))}
+    allowed = set(network.modeling.MODEL_NAMES) if modern else {name for name in vars(network.modeling) if name.startswith(("m2f_deeplabv3plus_", "me_deeplabv3plus_", "single_deeplabv3plus_", "deeplabv3plus_"))}
     if model_name not in allowed:
         raise ValueError(f"仓库中不存在模型 {model_name}。可用模型：{', '.join(sorted(allowed))}")
     model = getattr(network.modeling, model_name)(
@@ -75,12 +111,17 @@ def _build_model(cfg, weights, model_name, repo, torch):
     if cfg.get("separable_conv", False):
         network.convert_to_separable_conv(model.classifier)
     expected = model.state_dict()
+    state, omitted_auxiliary = _inference_state(state, expected, metadata, model_name, modern)
+    metadata['inference_loading'] = {'strict': True, 'loaded_tensors': len(state),
+                                   'omitted_training_auxiliary': omitted_auxiliary}
     missing = sorted(set(expected) - set(state))
     extra = sorted(set(state) - set(expected))
     shape_errors = [f"{k}: 权重 {tuple(state[k].shape)} / 模型 {tuple(expected[k].shape)}" for k in set(expected) & set(state) if expected[k].shape != state[k].shape]
     if missing or extra or shape_errors:
         raise ValueError(
             "权重与模型架构不匹配，已停止推理。请核对 model_name、num_classes、separable_conv 以及训练时的代码版本。"
+            + ("新版 M2F-DeepLab 仅兼容已确认结构的 schema=2 训练辅助头；其他多余、缺失或形状不符的参数仍会拒绝，请核对训练代码版本。" if modern else "")
+            +
             f"缺失 {len(missing)} 项 {missing[:4]}；多出 {len(extra)} 项 {extra[:4]}；形状差异 {shape_errors[:4]}"
         )
     model.load_state_dict(state, strict=True)
@@ -117,6 +158,11 @@ def _read_image(path, rgb, max_pixels):
                 arr = arr[:, :, 0]
             valid &= np.isfinite(arr).all(axis=2) if arr.ndim == 3 else np.isfinite(arr)
             return arr, valid, geo
+    if not rgb:
+        with Path(path).open("rb") as stream:
+            header = stream.read(26)
+        if header.startswith(b'\x89PNG\r\n\x1a\n') and len(header) > 24 and header[24] != 8:
+            raise ValueError("DEM PNG 必须是训练所用的 8 位三通道地形图，不能隐式降位深。")
     with Image.open(path) as im:
         if im.width * im.height > max_pixels:
             raise ValueError(f"影像超过当前 {max_pixels:,} 像素上限，请先裁剪研究区。")
@@ -213,12 +259,14 @@ def _predict_probability(model, rgb, dem_features, cfg, params, device, torch, p
     from PIL import Image
     h, w = rgb.shape[:2]
     strategy = params.get("strategy", cfg.get('strategy', 'native'))
+    if strategy == 'auto':
+        strategy = 'resize' if params.get('input_size') is not None or cfg.get('eval_resize', 256) else 'native'
     if strategy not in ('native', 'tiles', 'resize'):
-        raise ValueError('推理策略必须为 native、tiles 或 resize。')
-    size = int(params.get("input_size", cfg.get("input_size", 256)))
-    if strategy != 'native' and (size < 64 or size > 1024 or size % 16):
-        raise ValueError("窗口/缩放尺寸应为 64–1024 之间的 16 的倍数，默认 256。")
-    overlap = int(params.get("tile_overlap", cfg.get("tile_overlap", 64)))
+        raise ValueError('推理策略必须为 auto、native、tiles 或 resize。')
+    size = int(params['input_size'] if params.get('input_size') is not None else cfg.get('input_size', 256))
+    if strategy != 'native' and (size < 64 or size > 1024):
+        raise ValueError("窗口/缩放尺寸应为 64–1024 之间的整数。")
+    overlap = int(params['tile_overlap'] if params.get('tile_overlap') is not None else cfg.get('tile_overlap', 64))
     if strategy == 'tiles' and (overlap < 0 or overlap >= size):
         raise ValueError("分块重叠像素应大于等于 0 且小于推理尺寸。")
     rgb_mean = np.asarray(cfg.get("rgb_mean", [0.485, 0.456, 0.406]), dtype=np.float32)[None, None, :]
@@ -226,12 +274,15 @@ def _predict_probability(model, rgb, dem_features, cfg, params, device, torch, p
     if rgb_mean.shape != (1, 1, 3) or rgb_std.shape != (1, 1, 3) or (rgb_std <= 0).any():
         raise ValueError("rgb_mean/std 必须各包含 3 个值，std 必须为正。")
     multimodal = hasattr(model.backbone, "dem_backbone")
+    explicit_dem = multimodal and "has_dem" in inspect.signature(model.forward).parameters
     if dem_features is not None and not multimodal:
         raise ValueError("当前权重对应 RGB 单流模型，不能接收 DEM。请选择 M2F 双流模型与匹配的权重。")
     class_id = int(cfg.get("landslide_class", 1))
     dem_norm = cfg.get("dem_normalization", "imagenet")
     if dem_norm not in ("imagenet", "unit"):
         raise ValueError("dem_normalization 必须为 imagenet 或 unit，并与训练时一致。")
+    if modern_backend(cfg) and (dem_norm != 'imagenet' or not np.array_equal(rgb_mean, np.asarray([0.485, 0.456, 0.406], dtype=np.float32)[None, None, :]) or not np.array_equal(rgb_std, np.asarray([0.229, 0.224, 0.225], dtype=np.float32)[None, None, :])):
+        raise ValueError("M2F-DeepLab 的 RGB 和三通道 DEM 必须使用仓库一致的 ImageNet 标准化。")
     missing_mode = cfg.get("missing_dem_mode", "zeros")
     if missing_mode not in ("zeros", "normalized_black"):
         raise ValueError("missing_dem_mode 必须为 zeros 或 normalized_black。")
@@ -242,14 +293,17 @@ def _predict_probability(model, rgb, dem_features, cfg, params, device, torch, p
         if multimodal:
             if dem_crop is None:
                 d = torch.zeros_like(x)
-                if missing_mode == "normalized_black":
+                if missing_mode == "normalized_black" and not explicit_dem:
                     d = torch.from_numpy(np.broadcast_to(-rgb_mean / rgb_std, rgb_crop.shape).transpose(2, 0, 1).copy()).unsqueeze(0).to(device)
             else:
                 d = dem_crop.astype(np.float32) / 255.0
                 if dem_norm == "imagenet":
                     d = (d - rgb_mean) / rgb_std
                 d = torch.from_numpy(np.ascontiguousarray(d.transpose(2, 0, 1))).unsqueeze(0).to(device)
-            out = model(x, d)
+            if explicit_dem:
+                out = model(x, d, has_dem=torch.tensor([dem_crop is not None], dtype=torch.bool, device=device))
+            else:
+                out = model(x, d)
         else:
             out = model(x)
         logits = out["seg"] if isinstance(out, dict) else out
@@ -268,7 +322,13 @@ def _predict_probability(model, rgb, dem_features, cfg, params, device, torch, p
         if strategy == "resize":
             r = np.asarray(Image.fromarray(rgb).resize((size, size), Image.Resampling.BILINEAR))
             d = np.asarray(Image.fromarray(dem_features).resize((size, size), Image.Resampling.BILINEAR)) if dem_features is not None else None
-            probability = cv2.resize(one(r, d), (w, h), interpolation=cv2.INTER_LINEAR)
+            grid_probability = one(r, d)
+            if modern_backend(cfg):
+                # Nearest restore commutes with thresholding, matching upstream's
+                # network-grid argmax followed by nearest-neighbor mask export.
+                probability = np.array(Image.fromarray(grid_probability).resize((w, h), Image.Resampling.NEAREST), copy=True)
+            else:
+                probability = cv2.resize(grid_probability, (w, h), interpolation=cv2.INTER_LINEAR)
             progress(85, "整图推理完成，恢复原始尺寸")
             return probability, 1, strategy
         ys, xs = _starts(h, size, overlap), _starts(w, size, overlap)
@@ -314,7 +374,7 @@ def run_segmentation(rgb_path: Path, dem_path: Path | None, out_dir: Path, param
     if not dem_path and has_rgb_weights:
         model_name = cfg.get("rgb_model_name") or model_name
     cfg["model_name"] = model_name
-    repo = _resolve(root, cfg.get("repo_path", "backends/M2FDeepLabV3Plus"))
+    repo = _resolve(root, cfg.get("repo_path", "vendor/M2F-DeepLab"))
     try:
         import numpy as np
         import cv2
@@ -329,8 +389,12 @@ def run_segmentation(rgb_path: Path, dem_path: Path | None, out_dir: Path, param
         raise ValueError("RGB TIFF 不是 8 位影像。请按训练时相同方式转换为 uint8 RGB，避免平台自动拉伸改变模型输入分布。")
     dem_features, alignment = None, "仅 RGB 推理"
     dem_input = params.get("dem_input", cfg.get("dem_input", "prepared_rgb")) if dem_path else None
+    if dem_path and modern_backend(cfg) and dem_input != 'prepared_rgb':
+        raise ValueError("新版 M2F-DeepLab 仅接收预处理的三通道高程/坡度/坡向地形图，请先按训练方式处理原始 DEM。")
     if dem_path:
         dem, dem_valid, dem_geo = _read_image(dem_path, False, max_pixels)
+        if modern_backend(cfg) and (dem.dtype != np.uint8 or dem.ndim != 3 or dem.shape[2] != 3):
+            raise ValueError("M2F-DeepLab 的 DEM 必须为 uint8 三通道高程/坡度/坡向地形图，不进行自动降位深或灰度复制。")
         dem, dem_valid, alignment = _align_dem(rgb.shape, geo, dem, dem_valid, dem_geo, params)
         valid &= dem_valid
         dem_features = _dem_features(dem, dem_valid, dem_input)
@@ -363,7 +427,9 @@ def run_segmentation(rgb_path: Path, dem_path: Path | None, out_dir: Path, param
         if device.type == "cuda":
             torch.cuda.empty_cache()
     probability[~valid] = np.nan
-    binary = ((probability >= threshold) & valid).astype(np.uint8)
+    # Binary argmax ties select background (class 0) in upstream inference.
+    positive_threshold = probability > threshold if modern_backend(cfg) else probability >= threshold
+    binary = (positive_threshold & valid).astype(np.uint8)
     components, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
     if min_area:
         kept = np.zeros(components, dtype=np.uint8)
@@ -381,20 +447,32 @@ def run_segmentation(rgb_path: Path, dem_path: Path | None, out_dir: Path, param
         except (AttributeError, ValueError):
             pass
     warnings = ["输出为模型预测，概率未经校准；没有真值标签，因此不报告准确率、IoU 或 F1。"]
+    omitted_auxiliary = checkpoint_info.get('inference_loading', {}).get('omitted_training_auxiliary', [])
+    if omitted_auxiliary:
+        warnings.append(f"已兼容 schema=2 权重：仅在内存中排除 {len(omitted_auxiliary)} 项不参与 seg/edge 推理的训练辅助头参数，全部推理参数严格加载；原权重文件未修改。")
     if dem_path:
         if dem_input == "prepared_rgb":
             warnings.append("已读取训练所用格式的三通道地形图，未重新计算地形特征或交换通道；请确保文件像素编码与训练一致。")
         else:
             warnings.append("原始 DEM 已派生高程/梯度幅值/坡向通道；梯度幅值不是物理坡度角，仅适用于训练采用相同派生方法的权重。")
+    elif modern_backend(cfg) and model_name.startswith(("m2f_", "me_")):
+        route = '零地形特征' if model_name.endswith('_b') else 'FHM 特征幻觉'
+        warnings.append(f"缺失 DEM：显式 has_dem=False，使用{route}路径；效果取决于对应权重的训练。")
     elif model_name.startswith(("m2f_", "me_")):
         if cfg.get("missing_dem_mode", "zeros") == "zeros":
             warnings.append("缺失 DEM 时使用仓库的特征幻觉路径；效果取决于权重是否充分训练过缺失模态样本。")
         else:
             warnings.append("缺失 DEM 时使用经标准化的黑色占位图以复现训练数据输入；这会走 DEM 编码器，效果需验证。")
     if strategy == "resize":
-        warnings.append("整图被缩放至训练输入尺寸再恢复，较小滑坡可能丢失；大图建议使用滑窗。")
+        warnings.append("整图按所选评估尺寸缩放后恢复原图；新版掩膜采用最近邻恢复，与原仓库的网络网格判别一致。改变尺寸或滑窗策略会影响结果。")
     metrics = {
-        "model": model_name, "weights": weights.name, "reviewed_repo_commit": REVIEWED_COMMIT,
+        "model": model_name, "weights": weights.name, "reviewed_repo_commit": REVIEWED_COMMIT if modern_backend(cfg) else LEGACY_COMMIT,
+        "backend": cfg.get('backend', 'legacy'), "repo_path": cfg.get('repo_path'),
+        "has_dem": dem_path is not None,
+        "dem_route": ('real_dem' if dem_path else 'zero_features' if model_name.endswith('_b') else 'fhm') if model_name.startswith(('m2f_', 'me_')) else 'rgb',
+        "requested_strategy": params.get('strategy', cfg.get('strategy', 'native')),
+        "eval_resize": cfg.get('eval_resize'),
+        "probability_restore": 'nearest' if modern_backend(cfg) and strategy == 'resize' else 'native_or_blended',
         "input_mode": "RGB+DEM" if dem_path else "RGB", "device": str(device),
         "output_stride": int(cfg.get("output_stride", 8)),
         "input_size": None if strategy == 'native' else int(cfg.get("input_size", 256)),

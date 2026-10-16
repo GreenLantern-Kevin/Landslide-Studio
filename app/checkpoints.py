@@ -68,9 +68,13 @@ def checkpoint_state(checkpoint):
 def checkpoint_metadata(checkpoint, state=None):
     """Read only scalar training settings and known output-head dimensions."""
     state = checkpoint_state(checkpoint) if state is None else state
+    stored_config = checkpoint.get("config", {})
+    if isinstance(stored_config, dict) and checkpoint.get("model_name") and stored_config.get("model") not in (None, checkpoint["model_name"]):
+        raise ValueError("权重的 model_name 与 config.model 不一致，请核对训练导出的 checkpoint。")
     fields = {"model_name": ("model_name", "model"),
               "output_stride": ("output_stride",), "num_classes": ("num_classes",),
-              "input_size": ("input_size", "crop_size"), "separable_conv": ("separable_conv",)}
+              "input_size": ("input_size", "crop_size"), "separable_conv": ("separable_conv",),
+              "eval_resize": ("eval_resize", "val_size")}
     sources = [("checkpoint", checkpoint)]
     for key in ("config", "args", "opts", "hparams", "training_config"):
         value = checkpoint.get(key)
@@ -88,6 +92,8 @@ def checkpoint_metadata(checkpoint, state=None):
                     valid = isinstance(value, str) and len(value) <= 128
                 elif target == "separable_conv":
                     valid = isinstance(value, bool)
+                elif target == "eval_resize":
+                    valid = isinstance(value, int) and not isinstance(value, bool) and value >= 0
                 else:
                     valid = isinstance(value, int) and not isinstance(value, bool) and value > 0
                 if valid:
@@ -103,7 +109,9 @@ def checkpoint_metadata(checkpoint, state=None):
     class_counts = {int(tensor.shape[0]) for tensor in heads}
     if len(class_counts) == 1:
         inferred["num_classes"] = class_counts.pop()
+    schema = checkpoint.get("schema_version")
     return {"recorded": recorded, "recorded_sources": provenance, "inferred": inferred,
+            "schema": schema if isinstance(schema, int) else None,
             "tensor_count": len(state),
             "has_dem_backbone": any("dem_backbone" in key for key in state),
             "has_fhm": any("fhm" in key.lower() for key in state),
@@ -115,7 +123,7 @@ def resolve_checkpoint_config(config, metadata, overrides=None):
     """Recorded training settings first, with explicit per-run choices last."""
     effective = dict(config)
     sources = {name: "platform_config" for name in
-               ("model_name", "output_stride", "num_classes", "input_size", "separable_conv")}
+               ("model_name", "output_stride", "num_classes", "input_size", "separable_conv", "eval_resize")}
     if config.get("auto_match_checkpoint", True):
         for name, value in metadata.get("inferred", {}).items():
             effective[name], sources[name] = value, "tensor_shape"
@@ -124,6 +132,25 @@ def resolve_checkpoint_config(config, metadata, overrides=None):
     for name in ("output_stride", "input_size", "tile_overlap"):
         if overrides and overrides.get(name) is not None:
             effective[name], sources[name] = overrides[name], "request"
+    return effective, sources
+
+
+def resolve_inference_config(config, metadata, overrides=None, *, modern=False):
+    """Separate evaluation resize from training crop size for M2F-DeepLab."""
+    effective, sources = resolve_checkpoint_config(config, metadata, overrides)
+    if not modern:
+        return effective, sources
+    for name in ("model_name", "output_stride", "num_classes", "separable_conv"):
+        recorded = metadata.get("recorded", {}).get(name)
+        if recorded is not None and effective.get(name) != recorded:
+            raise ValueError(f"{name}={effective.get(name)} 与权重记录 {recorded} 冲突；请使用自动匹配或与训练一致的设置。")
+    effective.setdefault("strategy", "auto")
+    effective.setdefault("eval_resize", 256)  # Same fallback as upstream prediction.
+    if "eval_resize" not in config and "eval_resize" not in metadata.get("recorded", {}):
+        sources["eval_resize"] = "upstream_fallback"
+    if not overrides or overrides.get("input_size") is None:
+        effective["input_size"] = effective["eval_resize"] or config.get("input_size", 256)
+        sources["input_size"] = sources["eval_resize"]
     return effective, sources
 
 

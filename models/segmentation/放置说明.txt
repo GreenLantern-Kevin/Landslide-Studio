@@ -1,9 +1,7 @@
-当前已放置并验证：rgb_dem.pth。
-模型名 m2f_deeplabv3plus_xception16 与2类输出可自动识别。
-output_stride 已按您确认的训练设置16配置；权重没有保存该值，不能从卷积形状自动推断。
-训练 crop_size=256，不等于推理只能256×256。
-页面默认“原图推理”，直接使用图像原始宽高，无需input_size。
-选择滑窗或缩放模式时，input_size是窗口或缩放尺寸，默认256，可在界面修改。
-三通道DEM使用prepared_rgb；默认保留与训练一致的ImageNet标准化。
-页面“检查权重可识别的参数”可查看元数据；本次输入设置优先于默认配置。
-只做推理，不训练。原权重保持不变。
+分割网络：M2F-DeepLab（仅推理）
+完整训练 checkpoint 的默认路径：models/segmentation/m2f_deeplab.pth
+建议保留 model_state、model_name、config，以自动读取网络、output_stride、类别数和 eval_resize/val_size。
+RGB+DEM 和 RGB-only 默认使用同一双流权重。DEM 必须是配准的 uint8 三通道高程/坡度/坡向地形图。
+自动推理尺寸取验证尺寸，不取训练 crop_size；页面提供原图、缩放和滑窗选项。
+全部推理参数严格加载。已验证的 schema=2 Xception16 辅助分类头可在内存中限定兼容，原文件不会修改；其他结构差异不自动忽略。
+详细配置、兼容条件和导出说明见 docs/分割推理.md。

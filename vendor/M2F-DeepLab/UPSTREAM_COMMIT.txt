@@ -1,0 +1,4 @@
+Source: https://github.com/GreenLantern-Kevin/M2F-DeepLab
+Commit: e655ee310f5e9dfafceb33ca2afc92f214e14c29
+Retrieved: 2026-10-16
+Source files retained unchanged; inference integration only.
